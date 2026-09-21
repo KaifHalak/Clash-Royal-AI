@@ -16,6 +16,10 @@ REGIONS = {
     "hand_3": to_ratio(533, 1331, 701, 1520, w, h),
     "hand_4": to_ratio(702, 1331, 878, 1520, w, h),
     "next_card": to_ratio(47, 1491, 120, 1578, w, h),
+    "tower_user_left": to_ratio(182, 994, 250, 1020, w, h),
+    "tower_user_right": to_ratio(652, 994, 708, 1020, w, h),
+    "tower_enemy_left": to_ratio(180, 213, 250, 240, w, h),
+    "tower_enemy_right": to_ratio(650, 213, 720, 240, w, h)
 }
 
 

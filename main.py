@@ -7,7 +7,7 @@ from window_capture import WindowCapture
 from card_matching import CardMatcher
 from static_elements_extractor import extract_static_elements
 # from elixir_detection_image_match import ElixirReader
-
+from tower_health import TowerHealthExtractor
 
 
 
@@ -15,14 +15,15 @@ def main():
     window_capture = WindowCapture("LDPlayer").start()
     card_matcher = CardMatcher()
     # elixir_reader = ElixirReader()
-
+    tower_health_reader = TowerHealthExtractor()
+    step = 0
     for frame in window_capture.frames(fps=2):  # <-- control rate here, e.g. 2 frames/sec to LLM
         # frame is a BGR numpy array
 
         static_elements = extract_static_elements(frame)
 
     
-
+        
         for name, element in static_elements.items():
             # if name.startswith("hand"):
                 # card_name, score = card_matcher.identify(element)
@@ -33,14 +34,12 @@ def main():
             #     elixir_value = elixir_reader.read(element, debug=False)
             #     print(f"{name}: {elixir_value}")
                 
+            if name.startswith("tower_enemy"):
+                tower_hp = tower_health_reader.read(element)
+                print(f"{name}: {tower_hp}")
                 
-            if name.startswith("next_card"):
-                card_name, score = card_matcher.identify(element)
-                match_name = card_name if card_name is not None else "NO MATCH"
-                print(f"{name}: {match_name} (score: {score:.4f})")
-                cv2.imwrite(f"{name}.png", element)
-
-        
+                # cv2.imwrite(f"./temp/debug_{name}.png", element)
+                # step += 1
 
         # cv2.imshow("AI Vision", frame)
 
