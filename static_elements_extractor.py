@@ -19,7 +19,8 @@ REGIONS = {
     "tower_user_left": to_ratio(182, 994, 250, 1020, w, h),
     "tower_user_right": to_ratio(652, 994, 708, 1020, w, h),
     "tower_enemy_left": to_ratio(180, 213, 250, 240, w, h),
-    "tower_enemy_right": to_ratio(650, 213, 720, 240, w, h)
+    "tower_enemy_right": to_ratio(650, 213, 720, 240, w, h),
+    "timer": to_ratio(750, 36, 900, 85, w, h),
 }
 
 

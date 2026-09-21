@@ -8,6 +8,7 @@ from card_matching import CardMatcher
 from static_elements_extractor import extract_static_elements
 from elixir_detection_image_match import ElixirExtractor
 from tower_health import TowerHealthExtractor
+from timer_extractor import TimeExtractor
 
 
 
@@ -16,6 +17,7 @@ def main():
     card_matcher = CardMatcher()
     elixir_reader = ElixirExtractor()
     tower_health_reader = TowerHealthExtractor()
+    timer_reader = TimeExtractor()
     step = 0
     hand_res = {}
     for frame in window_capture.frames(fps=2):  # <-- control rate here, e.g. 2 frames/sec to LLM
@@ -26,11 +28,11 @@ def main():
     
         
         for name, element in static_elements.items():
-            if name.startswith("hand"):
-                card_name, score = card_matcher.identify(element)
-                match_name = card_name if card_name is not None else "NO MATCH"
-                hand_res[name] = match_name
-                print(f"{name}: {match_name} (score: {score:.4f})")
+            # if name.startswith("hand"):
+            #     card_name, score = card_matcher.identify(element)
+            #     match_name = card_name if card_name is not None else "NO MATCH"
+            #     hand_res[name] = match_name
+            #     print(f"{name}: {match_name} (score: {score:.4f})")
     
             # if name.startswith("elixir"):
             #     elixir_value = elixir_reader.read(element, debug=False)
@@ -40,6 +42,13 @@ def main():
             #     tower_hp = tower_health_reader.read(element)
             #     print(f"{name}: {tower_hp}")
                 
+                # cv2.imwrite(f"./temp/debug_{name}.png", element)
+                # step += 1
+                
+            if (name.startswith("timer")):
+                # cv2.imwrite(f"./temp/debug_{name}.png", element)
+                timer_value = timer_reader.read(element)
+                print(f"{timer_value}") 
                 # cv2.imwrite(f"./temp/debug_{name}.png", element)
                 # step += 1
 

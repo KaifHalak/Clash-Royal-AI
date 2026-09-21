@@ -15,7 +15,7 @@ CURRENT_DECK_DIR = "C:/MyStuff/ClashRoyal/current-deck"
 # ADD_NEW_CARDS_DIR = "C:/MyStuff/ClashRoyal/temp"
 
 # Cosine similarity threshold -- tune by testing against known same/different pairs.
-CONFIDENCE_THRESHOLD = 0.40
+CONFIDENCE_THRESHOLD = 0.35 # We can trust the semantic embedding. We still need a confidence threshold to avoid false positives.
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 
