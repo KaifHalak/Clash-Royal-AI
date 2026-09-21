@@ -4,6 +4,10 @@ import time
 import cv2
 from windows_capture import WindowsCapture, Frame, InternalCaptureControl
 
+# Crop pixels that are outside the useful game area on each captured frame.
+CROP_TOP_PX = 40
+CROP_RIGHT_PX = 40
+
 
 class WindowCapture:
     """
@@ -18,7 +22,6 @@ class WindowCapture:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
 
-
         # This is a blocking call, so we need to use threads
         self._capture = WindowsCapture(
             cursor_capture=False,
@@ -29,8 +32,13 @@ class WindowCapture:
 
         @self._capture.event
         def on_frame_arrived(frame: Frame, capture_control: InternalCaptureControl):
+
+            # Cropping out the top and right borders of the emulator window
+            cropped_bgra = frame.frame_buffer[CROP_TOP_PX:, :-CROP_RIGHT_PX]
+
             with self._lock:
-                self._latest_bgra = frame.frame_buffer  # raw, no cvtColor here
+                # Keep the frame in BGRA; convert to BGR only when it is requested.
+                self._latest_bgra = cropped_bgra
             if self._stop_event.is_set():
                 capture_control.stop()
 

@@ -1,1 +1,3 @@
 - Need to figure out a way to add all cards with elixir at bottom
+- Need to fiure out a way to match images other than playing from game
+- Dedup function inside add new cards does not work, need to fix
