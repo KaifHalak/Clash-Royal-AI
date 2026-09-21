@@ -1,0 +1,76 @@
+import threading
+import time
+
+import cv2
+from windows_capture import WindowsCapture, Frame, InternalCaptureControl
+
+
+class WindowCapture:
+    """
+    Captures a window via the Windows Graphics Capture API in the background.
+    Conversion (BGRA -> BGR) only happens when a frame is actually pulled,
+    so unused frames cost nothing.
+    """
+
+    def __init__(self, window_title: str):
+        self.window_title = window_title
+        self._latest_bgra = None
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+
+
+        # This is a blocking call, so we need to use threads
+        self._capture = WindowsCapture(
+            cursor_capture=False,
+            draw_border=False,
+            monitor_index=None,
+            window_name=window_title,
+        )
+
+        @self._capture.event
+        def on_frame_arrived(frame: Frame, capture_control: InternalCaptureControl):
+            with self._lock:
+                self._latest_bgra = frame.frame_buffer  # raw, no cvtColor here
+            if self._stop_event.is_set():
+                capture_control.stop()
+
+        @self._capture.event
+        def on_closed():
+            self._stop_event.set()
+
+        self._thread = threading.Thread(target=self._capture.start, daemon=True)
+
+    def start(self):
+        """Start background capture. Non-blocking."""
+        self._thread.start()
+        return self
+
+    def get_frame(self):
+        """Return the latest frame as BGR (numpy array), or None if not ready yet."""
+        with self._lock:
+            bgra = self._latest_bgra
+        if bgra is None:
+            return None
+        return cv2.cvtColor(bgra, cv2.COLOR_BGRA2BGR)
+
+    def frames(self, fps: float):
+        """
+        Generator: yields one frame at the requested rate.
+        Caller (main.py) controls pacing.
+        """
+        interval = 1.0 / fps
+        while not self._stop_event.is_set():
+            t0 = time.perf_counter()
+
+            frame = self.get_frame()
+            if frame is not None:
+                yield frame
+
+            elapsed = time.perf_counter() - t0
+            sleep_time = interval - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
+    def stop(self):
+        """Signal the capture session to close."""
+        self._stop_event.set()
