@@ -6,6 +6,7 @@ import os
 from window_capture import WindowCapture
 from card_matching import CardMatcher
 from static_elements_extractor import extract_static_elements
+from elixir_detection_image_match import ElixirReader
 
 
 
@@ -13,6 +14,7 @@ from static_elements_extractor import extract_static_elements
 def main():
     window_capture = WindowCapture("LDPlayer").start()
     card_matcher = CardMatcher()
+    elixir_reader = ElixirReader()
 
     for frame in window_capture.frames(fps=2):  # <-- control rate here, e.g. 2 frames/sec to LLM
         # frame is a BGR numpy array
@@ -22,12 +24,16 @@ def main():
     
 
         for name, element in static_elements.items():
-            if name.startswith("hand"):
-                card_name, score = card_matcher.identify(element)
-                match_name = card_name if card_name is not None else "NO MATCH"
-                print(f"{name}: {match_name} (score: {score:.4f})")
+            # if name.startswith("hand"):
+                # card_name, score = card_matcher.identify(element)
+                # match_name = card_name if card_name is not None else "NO MATCH"
+                # print(f"{name}: {match_name} (score: {score:.4f})")
     
-               
+            if name.startswith("elixir"):
+                elixir_value = elixir_reader.read(element, debug=False)
+                print(f"{name}: {elixir_value}")
+                
+                # cv2.imwrite("debug_elixir_crop_2.png", element)
 
         
 

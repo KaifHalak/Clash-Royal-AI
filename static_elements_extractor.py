@@ -10,7 +10,7 @@ def to_ratio(x1, y1, x2, y2, w, h):
 w, h = 900, 1600
 
 REGIONS = {
-    "elixir_bar": to_ratio(162, 1520, 897, 1593, w, h),
+    "elixir_bar": to_ratio(240, 1520, 295, 1575, w, h),
     "hand_1": to_ratio(203, 1331, 365, 1520, w, h),
     "hand_2": to_ratio(368, 1331, 535, 1520, w, h),
     "hand_3": to_ratio(533, 1331, 701, 1520, w, h),
