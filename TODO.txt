@@ -1,3 +1,6 @@
 - Need to figure out a way to add all cards with elixir at bottom
 - Need to fiure out a way to match images other than playing from game
 - Dedup function inside add new cards does not work, need to fix
+
+
+- For the new card extraction using paddle paddle, look into utilizing gpu rather than cpu. may not give us much tho

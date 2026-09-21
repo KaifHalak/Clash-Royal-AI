@@ -17,6 +17,7 @@ def main():
     elixir_reader = ElixirExtractor()
     tower_health_reader = TowerHealthExtractor()
     step = 0
+    hand_res = {}
     for frame in window_capture.frames(fps=2):  # <-- control rate here, e.g. 2 frames/sec to LLM
         # frame is a BGR numpy array
 
@@ -25,14 +26,15 @@ def main():
     
         
         for name, element in static_elements.items():
-            # if name.startswith("hand"):
-                # card_name, score = card_matcher.identify(element)
-                # match_name = card_name if card_name is not None else "NO MATCH"
-                # print(f"{name}: {match_name} (score: {score:.4f})")
+            if name.startswith("hand"):
+                card_name, score = card_matcher.identify(element)
+                match_name = card_name if card_name is not None else "NO MATCH"
+                hand_res[name] = match_name
+                print(f"{name}: {match_name} (score: {score:.4f})")
     
-            if name.startswith("elixir"):
-                elixir_value = elixir_reader.read(element, debug=False)
-                print(f"{name}: {elixir_value}")
+            # if name.startswith("elixir"):
+            #     elixir_value = elixir_reader.read(element, debug=False)
+            #     print(f"{name}: {elixir_value}")
                 
             # if name.startswith("tower_enemy"):
             #     tower_hp = tower_health_reader.read(element)
