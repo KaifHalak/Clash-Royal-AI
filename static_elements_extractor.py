@@ -15,6 +15,7 @@ REGIONS = {
     "hand_2": to_ratio(368, 1331, 535, 1520, w, h),
     "hand_3": to_ratio(533, 1331, 701, 1520, w, h),
     "hand_4": to_ratio(702, 1331, 878, 1520, w, h),
+    "next_card": to_ratio(47, 1491, 120, 1578, w, h),
 }
 
 
