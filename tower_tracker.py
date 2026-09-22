@@ -86,6 +86,11 @@ class TowerTracker:
         # True: Tower is dead
         return self._get_tower_state(tower_name)["is_dead"]
 
+    def is_king_active(self, tower_name):
+        # True: King tower is active
+        tower_state = self._get_tower_state(tower_name)
+        return not tower_state["is_dead"] and tower_state["last_known_hp"] is not None
+
     def get_last_known_hp(self, tower_name):
         return self._get_tower_state(tower_name)["last_known_hp"]
 

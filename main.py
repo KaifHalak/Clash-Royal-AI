@@ -41,12 +41,16 @@ def main():
             #     elixir_value = elixir_reader.read(element, debug=False)
             #     print(f"{name}: {elixir_value}")
                 
-            if name.startswith("tower"):
+            if name.endswith("king"):
                 tower_hp = tower_tracker.update(name, element)
-                if (tower_tracker.is_dead(name)):
-                    print(f"{name}: DEAD")
-                else:
-                    print(f"{name}: {tower_hp}")
+                print(f"{name}: {tower_hp}")
+                print(f"{name}: {tower_tracker.is_king_active(name)}")
+                cv2.imwrite(f"./temp/debug_{name}.png", element)
+               
+                # if (tower_tracker.is_dead(name)):
+                #     print(f"{name}: DEAD")
+                # else:
+                #     print(f"{name}: {tower_hp}")
                 
             #     cv2.imwrite(f"./temp/debug_{name}.png", element)
             #     step += 1
@@ -57,6 +61,8 @@ def main():
                 # print(f"{timer_value}") 
                 # cv2.imwrite(f"./temp/debug_{name}.png", element)
                 # step += 1
+
+        
 
         # cv2.imshow("AI Vision", frame)
 
