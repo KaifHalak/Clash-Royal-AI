@@ -1,33 +1,39 @@
 from turtle import width
-
+import numpy as np
 import cv2
 import os
+# from ultralytics import YOLO
+
 
 from window_capture import WindowCapture
-from card_matching import CardMatcher
 from static_elements_extractor import extract_static_elements
-from elixir_detection_image_match import ElixirExtractor
-from timer_extractor import TimeExtractor
-from tower_tracker import TowerTracker
+# from card_matching import CardMatcher
+# from elixir_detection_ocr import ElixirExtractor
+# from timer_extractor import TimeExtractor
+# from tower_tracker import TowerTracker
 
-
+ 
+FOLDER = "C:/MyStuff/ClashRoyal/game_frames"
 
 def main():
     window_capture = WindowCapture("LDPlayer").start()
-    card_matcher = CardMatcher()
-    elixir_reader = ElixirExtractor()
-    timer_reader = TimeExtractor()
-    tower_tracker = TowerTracker()
+    # card_matcher = CardMatcher()
+    # elixir_reader = ElixirExtractor()
+    # timer_reader = TimeExtractor()
+    # tower_tracker = TowerTracker()
     step = 0
     hand_res = {}
-    for frame in window_capture.frames(fps=2):  # <-- control rate here, e.g. 2 frames/sec to LLM
-        # frame is a BGR numpy array
 
+    for frame in window_capture.frames(fps=0.25): 
+
+        step += 1
         static_elements = extract_static_elements(frame)
-
-    
-        
+        cv2.imwrite(f"{FOLDER}/frame_{step}.png", frame)
+                
         for name, element in static_elements.items():
+            pass
+            
+
             
             # cv2.imwrite(f"./temp/debug_{name}.png", element)
             
@@ -41,11 +47,11 @@ def main():
             #     elixir_value = elixir_reader.read(element, debug=False)
             #     print(f"{name}: {elixir_value}")
                 
-            if name.endswith("king"):
-                tower_hp = tower_tracker.update(name, element)
-                print(f"{name}: {tower_hp}")
-                print(f"{name}: {tower_tracker.is_king_active(name)}")
-                cv2.imwrite(f"./temp/debug_{name}.png", element)
+            # if name.endswith("king"):
+            #     tower_hp = tower_tracker.update(name, element)
+            #     print(f"{name}: {tower_hp}")
+            #     print(f"{name}: {tower_tracker.is_king_active(name)}")
+            #     cv2.imwrite(f"./temp/debug_{name}.png", element)
                
                 # if (tower_tracker.is_dead(name)):
                 #     print(f"{name}: DEAD")
@@ -75,3 +81,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+ 
