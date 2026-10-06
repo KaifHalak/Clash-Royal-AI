@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-from paddleocr import TextRecognition
 
 #TODO: It takes the princess tower health as a badge. This needs to be fixed
 #TODO: There are a bit of inaccuracies but for now its fine
@@ -62,15 +61,19 @@ TROOP_CROP_GAP_Y_MULT = 0.0   # gap between badge bottom and crop top
 TOWER_IGNORE_REGIONS = []     # fill in after seeing where towers land
 
 
-class TroopExtractor:
-    def __init__(self, frame):
-        """frame: full game frame (BGR numpy array, from cv2)."""
-        assert frame is not None, "Frame is None"
-        self.frame = frame
+# ================= BADGE CHECK FOR A YOLO BOX =================
+# Search region around a YOLO troop box: the whole box, plus some space above and to the sides,
+# because the badge sits on/above the troop's head and can stick out of the box.
+BADGE_SEARCH_ABOVE = 2 * BADGE_MAX_SIDE   # px above the box top
+BADGE_SEARCH_SIDE = BADGE_MAX_SIDE        # px left and right of the box
+# A badge only belongs to this troop if (badge + HP bar) is centred over the box and in its upper half
+BADGE_MAX_BOX_DEPTH = 0.5                 # badge centre at most this far down the box (fraction of box height)
 
-        # Instantiated once -- loading the model is expensive, predict() is not.
-        # Same model/settings as the elixir and tower-health readers
-        self.ocr = TextRecognition(model_name="PP-OCRv6_tiny_rec", enable_mkldnn=False)
+
+class TroopExtractor:
+    def __init__(self):
+        # OCR is only needed for read_badge_number, so it's loaded the first time that's called
+        self.ocr = None
 
     # ================= STEPS =================
     def crop_to_arena(self, image_bgr, crop_left=CROP_LEFT, crop_right=CROP_RIGHT,
@@ -144,7 +147,8 @@ class TroopExtractor:
                     verbose=False):
         """Return (accepted_badges, rejected_candidates).
 
-        accepted_badges: list of (x, y, side)
+        accepted_badges: list of (x, y, side, blob_width)
+            blob_width = width of badge + HP bar together (same as side when the troop is full HP)
         rejected_candidates: list of (x, y, side, reason, measured_value)
         """
         candidate_join_kernel = max(1, candidate_join_kernel)  # guard: kernel must be >= 1
@@ -171,6 +175,7 @@ class TroopExtractor:
             x, y, width, height, area = blob_stats[blob_index]
 
             fill_ratio = area / (width * height)
+            blob_width = width       # badge + HP bar; kept for the position check before width is cropped
 
             # Damaged troop: HP bar attached on the right -> keep the left square only
             # We are assuming that the badges are going to be squares
@@ -217,12 +222,12 @@ class TroopExtractor:
                 rejected_candidates.append((x, y, badge_side, "digit", black_ratio))
                 continue
 
-            accepted_badges.append((x, y, badge_side))
+            accepted_badges.append((x, y, badge_side, blob_width))
 
 
-        for badge in accepted_badges:
-            x, y, side = badge
-            print(f"ACCEPTED badge at ({x},{y}) side={side}")
+        if verbose:
+            for x, y, side, _ in accepted_badges:
+                print(f"ACCEPTED badge at ({x},{y}) side={side}")
 
         return accepted_badges, rejected_candidates
 
@@ -231,7 +236,7 @@ class TroopExtractor:
                            troop_crop_shift_x_mult=TROOP_CROP_SHIFT_X_MULT,
                            troop_crop_gap_y_mult=TROOP_CROP_GAP_Y_MULT):
         """Square box below the badge where the troop body is, clipped to the image."""
-        badge_x, badge_y, badge_side = badge
+        badge_x, badge_y, badge_side = badge[:3]
         crop_side = int(badge_side * troop_crop_size_mult)
         crop_centre_x = badge_x + badge_side / 2 + badge_side * troop_crop_shift_x_mult
         crop_top = badge_y + badge_side + badge_side * troop_crop_gap_y_mult
@@ -244,7 +249,13 @@ class TroopExtractor:
 
     def read_badge_number(self, arena_bgr, badge, scale=8, pad=4):
         """OCR the digit inside one badge. Returns (digits, confidence 0-100); digits is '' if no digit was read."""
-        badge_x, badge_y, badge_side = badge
+        if self.ocr is None:
+            # Loaded once, on first use -- loading the model is expensive, predict() is not.
+            # Same model/settings as the elixir and tower-health readers
+            from paddleocr import TextRecognition
+            self.ocr = TextRecognition(model_name="PP-OCRv6_tiny_rec", enable_mkldnn=False)
+
+        badge_x, badge_y, badge_side = badge[:3]
         badge_crop = arena_bgr[badge_y:badge_y + badge_side, badge_x:badge_x + badge_side]
 
         # The digit is only a few pixels tall, so upscale it, and pad so it isn't touching the image edge
@@ -257,10 +268,49 @@ class TroopExtractor:
             return digits, int(result.get("rec_score", 0) * 100)
         return "", 0
 
+    # ================= BADGE CHECK FOR A YOLO BOX =================
+    def find_badge_for_box(self, frame, box):
+        """Look for an enemy (red) badge belonging to one YOLO troop box.
+
+        frame: full BGR frame. box: (x1, y1, x2, y2) in frame pixels.
+        Returns (x, y, side, blob_width) in frame pixels, or None if no badge belongs to this troop.
+        """
+        frame_height, frame_width = frame.shape[:2]
+        x1, y1, x2, y2 = box
+
+        # Search region: the whole box + space above and to the sides, clipped to the frame
+        region_x1 = max(0, x1 - BADGE_SEARCH_SIDE)
+        region_x2 = min(frame_width, x2 + BADGE_SEARCH_SIDE)
+        region_y1 = max(0, y1 - BADGE_SEARCH_ABOVE)
+        region_y2 = min(frame_height, y2)
+        region = frame[region_y1:region_y2, region_x1:region_x2]
+        if region.size == 0:
+            return None
+
+        inside_mask, _, joined_mask = self.build_badge_colour_mask(region, tower_ignore_regions=[])
+        badges, _ = self.find_badges(joined_mask, inside_mask)
+
+        # Only keep badges positioned like THIS troop's badge, so a neighbour's badge (e.g. in a fight)
+        # doesn't count. Use the centre of badge + HP bar: when damaged, the badge moves left but the
+        # pair stays centred over the troop.
+        box_centre_x = (x1 + x2) / 2
+        max_badge_y = y1 + BADGE_MAX_BOX_DEPTH * (y2 - y1)
+        best_badge, best_distance = None, None
+        for badge_x, badge_y, side, blob_width in badges:
+            frame_x, frame_y = badge_x + region_x1, badge_y + region_y1
+            blob_centre_x = frame_x + blob_width / 2
+            badge_centre_y = frame_y + side / 2
+            if not (x1 <= blob_centre_x <= x2) or badge_centre_y > max_badge_y:
+                continue
+            distance = abs(blob_centre_x - box_centre_x) + abs(badge_centre_y - y1)
+            if best_distance is None or distance < best_distance:
+                best_badge, best_distance = (frame_x, frame_y, side, blob_width), distance
+        return best_badge
+
     # ================= RUN =================
-    def extract_troop_crops(self):
+    def extract_troop_crops(self, frame):
         """Return the list of troop crops (BGR numpy arrays), one per detected enemy badge."""
-        arena_bgr = self.crop_to_arena(self.frame)
+        arena_bgr = self.crop_to_arena(frame)
         arena_height, arena_width = arena_bgr.shape[:2]
 
         badge_inside_mask, badge_border_mask, badge_joined_mask = self.build_badge_colour_mask(arena_bgr)
@@ -270,7 +320,7 @@ class TroopExtractor:
         troop_crops = []
 
         for badge_number, badge in enumerate(detected_badges):
-            badge_x, badge_y, badge_side = badge
+            badge_x, badge_y, badge_side = badge[:3]
             badge_text, badge_confidence = self.read_badge_number(arena_bgr, badge)
             print(f"Badge {badge_number} at ({badge_x},{badge_y}): '{badge_text}' ({badge_confidence}%)")
             x1, y1, x2, y2 = self.get_troop_crop_box(badge, arena_width, arena_height)
