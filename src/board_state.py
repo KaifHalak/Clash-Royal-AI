@@ -98,7 +98,33 @@ class BoardState:
             del self.troops[track_id]
 
     def snapshot(self):
-        """Current battlefield: list of troop dicts, sorted by team then position."""
+        """Current battlefield: list of troop dicts, sorted by team then position (top to bottom).
+
+        Example payload:
+        [
+            {
+                "id": 12,                    # YOLO tracking ID
+                "name": "knight",            # majority vote over the last CLASS_HISTORY frames
+                "team": "enemy",             # "enemy" (red badge) or "user"
+                "team_decided": True,        # False during the first TEAM_VOTE_FRAMES frames
+                "tile": (14, 22),            # (col, row) on the 18x32 grid
+                "box": (381, 483, 447, 536), # (x1, y1, x2, y2) in frame pixels
+                "visible": True,             # False = not detected this frame, held for HOLD_SECONDS
+                "age": 3.4,                  # seconds since the troop was first seen
+            },
+            {
+                "id": 7,
+                "name": "giant",
+                "team": "user",
+                "team_decided": True,
+                "tile": (4, 22),
+                "box": (118, 463, 210, 537),
+                "visible": True,
+                "age": 8.1,
+            },
+        ]
+        Empty list when nothing is on the field (or before the first update).
+        """
         if self.frame_size is None:
             return []
         frame_width, frame_height = self.frame_size
@@ -120,12 +146,33 @@ class BoardState:
         return sorted(troops, key=lambda t: (t["team"], t["tile"][1], t["tile"][0]))
 
     def describe(self):
-        """The battlefield as text lines for the model, e.g. 'enemy giant at (5, 12)'."""
+        """The battlefield as text lines for the model, in the same order as snapshot().
+
+        Example payload:
+        [
+            "enemy knight at (14, 22)",
+            "user giant at (4, 22)",
+            "user archer at (9, 24)",
+            "user archer at (11, 23)",
+        ]
+        """
         return [f"{troop['team']} {troop['name']} at {troop['tile']}" for troop in self.snapshot()]
 
 
 def legend():
-    """Fixed description of the grid, sent to the model together with the troop list."""
+    """Fixed description of the grid, sent to the model together with the troop list.
+
+    Example payload:
+    [
+        "Grid: 18 columns x 32 rows, positions are (column, row).",
+        "Column 0 is the left edge, column 17 the right edge.",
+        "Row 0 is the top (enemy side), row 31 the bottom (user side).",
+        "enemy king tower: columns 7-10, rows 1-4",
+        "enemy left princess tower: columns 2-4, rows 5-7",
+        ...
+        "user king tower: columns 7-10, rows 27-30",
+    ]
+    """
     lines = [
         f"Grid: {GAME_COLUMNS} columns x {GAME_ROWS} rows, positions are (column, row).",
         f"Column 0 is the left edge, column {GAME_COLUMNS - 1} the right edge.",
