@@ -7,7 +7,9 @@ import os
 import time
 
 from troop_detector import TroopDetector
-from board_state import BoardState
+from game_state import GameState
+from rule_based_brain import RuleBasedBrain
+from emulator_input import EmulatorInput
 
 
 from window_capture import WindowCapture
@@ -17,21 +19,30 @@ from static_elements_extractor import extract_static_elements
 # from timer_extractor import TimeExtractor
 # from tower_tracker import TowerTracker
 
- 
+
 FOLDER = "C:/MyStuff/ClashRoyal/game_frames"
 step = 35
 
+DECISION_INTERVAL = 0.5     # seconds between bot decisions
+
 def main():
     global step
-    
+
     window_capture = WindowCapture("LDPlayer").start()
     # card_matcher = CardMatcher()
     # elixir_reader = ElixirExtractor()
     # timer_reader = TimeExtractor()
     # tower_tracker = TowerTracker()
     troop_detector = TroopDetector()
-    board = BoardState()
+    game_state = GameState()       # troops + hand + elixir + timer + towers, all in one place
+    brain = RuleBasedBrain()
+    emulator = EmulatorInput()
     last_print = 0.0
+
+    # Bot starts PAUSED: press "p" in the window to start/stop it playing cards
+    bot_playing = False
+    last_decision = 0.0
+    last_action = "none yet"
 
     hand_res = {}
 
@@ -85,10 +96,10 @@ def main():
       
         # YOLO troop tracking: each troop keeps the same ID across frames
         tracks, annotated_frame = troop_detector.track(frame)
-        board.update(tracks, frame)
+        game_state.update(frame, tracks)
 
         # Draw team + tile under each troop (red = enemy, blue = user, grey = team still being voted)
-        for troop in board.snapshot():
+        for troop in game_state.board.snapshot():
             x1, y1, x2, y2 = troop["box"]
             if not troop["team_decided"]:
                 colour = (160, 160, 160)
@@ -97,15 +108,34 @@ def main():
             label = f"{troop['team']} {troop['tile']}" + ("" if troop["visible"] else " (held)")
             cv2.putText(annotated_frame, label, (x1, y2 + 12), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 3)
             cv2.putText(annotated_frame, label, (x1, y2 + 12), cv2.FONT_HERSHEY_SIMPLEX, 0.4, colour, 1)
+        status = "BOT PLAYING (p to pause)" if bot_playing else "BOT PAUSED (p to play)"
+        cv2.putText(annotated_frame, status, (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3)
+        cv2.putText(annotated_frame, status, (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    (0, 255, 0) if bot_playing else (0, 255, 255), 1)
         cv2.imshow("Troop Detection", annotated_frame)
+
+        # Bot: decide + play every DECISION_INTERVAL, not every frame
+        if bot_playing and time.monotonic() - last_decision >= DECISION_INTERVAL:
+            last_decision = time.monotonic()
+            state = game_state.snapshot()
+            action = brain.decide(state["troops"], state["hand"], state["elixir"])
+            if action is not None:
+                emulator.play_card(action["slot"], *action["tile"])
+                last_action = f"{action['card']} -> {action['tile']} ({action['reason']})"
 
         # Show the battlefield once a second, replacing the previous reading (clear, then print)
         if time.monotonic() - last_print >= 1.0:
             last_print = time.monotonic()
             os.system("cls" if os.name == "nt" else "clear")
-            print("\n".join(board.describe()) or "(no troops)")
+            print(status)
+            print(f"last action: {last_action}")
+            print("---")
+            print("\n".join(game_state.describe()))
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("p"):
+            bot_playing = not bot_playing
+        if key == ord("q"):
             window_capture.stop()
             break
 
