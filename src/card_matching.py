@@ -1,17 +1,28 @@
-"""Match card images against the current deck or the full card library,
-using PaddleX's PP-ShiTuV2_rec image-embedding model instead of
-matchTemplate/ORB.
+"""Match card images against a hard-coded deck, using PaddleX's
+PP-ShiTuV2_rec image-embedding model instead of matchTemplate/ORB.
 """
 
 import os
-import shutil
 
 import cv2
 import numpy as np
 from paddlex import create_model
+from static_elements_extractor import extract_static_elements
+
+# The deck being played. Each name is a filename (without extension) in ALL_CARDS_DIR.
+# Only these cards are matched against, which cuts down on false positives.
+MY_DECK = [
+    "arrows",
+    "fireball",
+    "giant",
+    "knight",
+    "archers",
+    "mini_pekka",
+    "minions",
+    "musketeer",
+]
 
 ALL_CARDS_DIR = "C:/MyStuff/ClashRoyal/all-cards"
-CURRENT_DECK_DIR = "C:/MyStuff/ClashRoyal/current-deck"
 # ADD_NEW_CARDS_DIR = "C:/MyStuff/ClashRoyal/temp"
 
 # Cosine similarity threshold -- tune by testing against known same/different pairs.
@@ -28,11 +39,10 @@ class CardMatcher:
     def __init__(self):
         self.model = create_model("PP-ShiTuV2_rec")
 
-        # Embeddings are cached at load/promote time, NOT recomputed on every
-        # identify() call -- that's what keeps current_deck lookups fast.
+        # Embeddings are cached at load time, NOT recomputed on every
+        # identify() call.
         # {card_name: embedding vector}
-        self.all_cards_embeddings = self._load_and_embed_dir(ALL_CARDS_DIR)
-        self.current_deck_embeddings = self._load_and_embed_dir(CURRENT_DECK_DIR)
+        self.deck_embeddings = self._load_and_embed_deck(MY_DECK)
 
         self.new_cards_added = 0
 
@@ -62,19 +72,18 @@ class CardMatcher:
         results = list(self.model.predict(crop, batch_size=1))
         return np.array(results[0]["feature"])[0]
 
-    def _load_and_embed_dir(self, path):
-        """Load every image in a folder and return {card_name: embedding}."""
-        if not os.path.isdir(path):
-            os.makedirs(path, exist_ok=True)
-            return {}
-
-        file_paths = [
-            os.path.join(path, fname)
-            for fname in os.listdir(path)
-            if os.path.splitext(fname)[1].lower() in IMAGE_EXTENSIONS
-        ]
-        if not file_paths:
-            return {}
+    def _load_and_embed_deck(self, deck):
+        """Embed each deck card's image from ALL_CARDS_DIR, return {card_name: embedding}."""
+        file_paths = []
+        for name in deck:
+            matches = [
+                os.path.join(ALL_CARDS_DIR, name + ext)
+                for ext in IMAGE_EXTENSIONS
+                if os.path.isfile(os.path.join(ALL_CARDS_DIR, name + ext))
+            ]
+            if not matches:
+                raise FileNotFoundError(f"No image for deck card '{name}' in {ALL_CARDS_DIR}")
+            file_paths.append(matches[0])
 
         path_embeddings = self._embed_paths(file_paths)
 
@@ -101,37 +110,14 @@ class CardMatcher:
 
         return best_name, best_score
 
-    def _promote(self, name):
-        """Copy a newly-confirmed card into current_deck (memory + disk)."""
-        if name in self.current_deck_embeddings:
-            return
-
-        # Reuse the already-computed embedding -- no need to re-run the model.
-        self.current_deck_embeddings[name] = self.all_cards_embeddings[name]
-
-        src = os.path.join(ALL_CARDS_DIR, f"{name}.png")
-        dst = os.path.join(CURRENT_DECK_DIR, f"{name}.png")
-        if os.path.exists(src) and not os.path.exists(dst):
-            shutil.copy(src, dst)
-
     # ---- public API ----
 
     def identify(self, crop):
-        """
-        Returns (card_name, score). Checks current_deck first (fast path),
-        falls back to the full all_cards set only if that misses.
-        """
+        """Returns (card_name, score), matching only against MY_DECK."""
         crop_embedding = self._embed_crop(crop)
 
-        # Fast path: known deck for this match.
-        name, score = self._best_match(crop_embedding, self.current_deck_embeddings)
+        name, score = self._best_match(crop_embedding, self.deck_embeddings)
         if score > CONFIDENCE_THRESHOLD:
-            return name, score
-
-        # Fallback: full search, only reached for cards not yet seen this match.
-        name, score = self._best_match(crop_embedding, self.all_cards_embeddings)
-        if score > CONFIDENCE_THRESHOLD:
-            self._promote(name)
             return name, score
 
         # Low confidence -- caller should keep the last known state.
@@ -139,14 +125,14 @@ class CardMatcher:
 
     # def add_new_cards(self, crop):
     #     """
-    #     Used to seed all_cards/current_deck from real gameplay. Checks only
-    #     against current_deck (not the full library) -- if no match, saves
+    #     Used to seed all_cards from real gameplay. Checks only
+    #     against the deck (not the full library) -- if no match, saves
     #     the crop as a new candidate reference and caches its embedding so
     #     the same card isn't added twice.
     #     """
     #     crop_embedding = self._embed_crop(crop)
 
-    #     name, score = self._best_match(crop_embedding, self.current_deck_embeddings)
+    #     name, score = self._best_match(crop_embedding, self.deck_embeddings)
     #     if score > CONFIDENCE_THRESHOLD:
     #         print(f"Same: {name} ({score:.4f})")
     #         return name, score
@@ -154,7 +140,7 @@ class CardMatcher:
     #     new_card_name = f"new_card_{self.new_cards_added}"
     #     self.new_cards_added += 1
 
-    #     self.current_deck_embeddings[new_card_name] = crop_embedding
+    #     self.deck_embeddings[new_card_name] = crop_embedding
 
     #     os.makedirs(ADD_NEW_CARDS_DIR, exist_ok=True)
     #     crop_path = os.path.join(ADD_NEW_CARDS_DIR, f"{new_card_name}.png")
@@ -163,10 +149,48 @@ class CardMatcher:
     #     print(f"New card, score was {score:.4f}")
     #     return new_card_name, score
 
-    def reset_deck(self):
-        """Call between matches so the previous game's deck doesn't leak in."""
-        self.current_deck_embeddings = {}
-        self.new_cards_added = 0
-        if os.path.isdir(CURRENT_DECK_DIR):
-            shutil.rmtree(CURRENT_DECK_DIR)
-        os.makedirs(CURRENT_DECK_DIR, exist_ok=True)
+
+if __name__ == "__main__":
+    frame = cv2.imread("C:/MyStuff/ClashRoyal/game_frames/frame_122.png")
+    out = extract_static_elements(frame)
+    
+    hand1 = out["hand_1"]
+    hand2 = out["hand_2"]
+    hand3 = out["hand_3"]
+    hand4 = out["hand_4"]
+    next = out["next_card"]
+    
+    card_matcher = CardMatcher()
+    name1, score1 = card_matcher.identify(hand1)
+    name2, score2 = card_matcher.identify(hand2)
+    name3, score3 = card_matcher.identify(hand3)
+    name4, score4 = card_matcher.identify(hand4)
+    
+    name5, score5 = card_matcher.identify(next)
+
+    
+    print(f"Identified card: {name1} (score: {score1:.4f})")
+    print(f"Identified card: {name2} (score: {score2:.4f})")
+    print(f"Identified card: {name3} (score: {score3:.4f})")
+    print(f"Identified card: {name4} (score: {score4:.4f})")
+    print(f"Identified card: {name5} (score: {score5:.4f})")
+    
+    # =================================================
+    # frame1 = cv2.imread("C:/MyStuff/ClashRoyal/game_frames/frame_122.png")
+    # frame2 = cv2.imread("C:/MyStuff/ClashRoyal/game_frames/frame_122.png")
+    
+    # out1 = extract_static_elements(frame1)
+    # out2 = extract_static_elements(frame2)
+    
+    # hand1_1 = out1["hand_1"]
+    # hand2_1 = cv2.imread("C:/MyStuff/ClashRoyal/all-cards/giant.png")
+    
+    # card_matcher = CardMatcher()
+    
+    # card1_vec = card_matcher._embed_crop(hand1_1)
+    # card2_vec = card_matcher._embed_crop(hand2_1)
+    
+    # score = card_matcher._cosine_similarity(card1_vec, card2_vec)
+    # print(f"Cosine similarity between two identical cards: {score:.4f}")
+
+    pass

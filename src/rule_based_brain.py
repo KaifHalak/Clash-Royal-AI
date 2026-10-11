@@ -175,8 +175,8 @@ class RuleBasedBrain:
             return None
         for card in ("musketeer", "archers"):
             if card in playable:
-                # Behind the Giant, but never past our side of the river
-                tile = (giant["tile"][0], max(giant["tile"][1] + SUPPORT_DISTANCE, OUR_FIRST_ROW))
+                # Behind the Giant, but never past our side of the river or off the bottom of the grid
+                tile = (giant["tile"][0], min(max(giant["tile"][1] + SUPPORT_DISTANCE, OUR_FIRST_ROW), BEHIND_KING_ROW))
                 return self._action(playable, card, tile, f"support giant at {giant['tile']} with {card}")
         return None
 

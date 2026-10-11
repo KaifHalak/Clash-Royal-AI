@@ -7,4 +7,9 @@
 
 - for tower health, right now we are assuming that the healt will always be 4 digits. Need to adjust crop ratio otherwise. I think its better to take full width of health bar rather than only numbers
 
+
+
+- Inaccurate next card detection
+- Enemy king misclassified as dead
+
 .\venv\Scripts\Activate.ps1
