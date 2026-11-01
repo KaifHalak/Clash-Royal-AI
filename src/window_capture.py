@@ -21,6 +21,7 @@ class WindowCapture:
         self._latest_bgra = None
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
+        self._capture_error = None
 
         # This is a blocking call, so we need to use threads
         self._capture = WindowsCapture(
@@ -46,7 +47,22 @@ class WindowCapture:
         def on_closed():
             self._stop_event.set()
 
-        self._thread = threading.Thread(target=self._capture.start, daemon=True)
+        self._thread = threading.Thread(target=self._run_capture, daemon=True)
+
+    def _run_capture(self):
+        try:
+            self._capture.start()
+        except Exception as error:
+            # Forward background failures to the caller instead of leaving it
+            # waiting forever for a frame from a missing emulator window.
+            self._capture_error = error
+            self._stop_event.set()
+
+    def _check_capture_error(self):
+        if self._capture_error is not None:
+            raise RuntimeError(
+                f"Could not capture window {self.window_title!r}: {self._capture_error}"
+            ) from self._capture_error
 
     def start(self):
         """Start background capture. Non-blocking."""
@@ -55,6 +71,7 @@ class WindowCapture:
 
     def get_frame(self):
         """Return the latest frame as BGR (numpy array), or None if not ready yet."""
+        self._check_capture_error()
         with self._lock:
             bgra = self._latest_bgra
         if bgra is None:
@@ -78,6 +95,8 @@ class WindowCapture:
             sleep_time = interval - elapsed
             if sleep_time > 0:
                 time.sleep(sleep_time)
+
+        self._check_capture_error()
 
     def stop(self):
         """Signal the capture session to close."""

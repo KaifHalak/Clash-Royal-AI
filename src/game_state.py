@@ -3,6 +3,7 @@ import time
 from board_state import BoardState, legend
 from card_matching import CardMatcher
 from elixir_detection_ocr import ElixirExtractor
+from match_tracker import MatchTracker
 from static_elements_extractor import extract_static_elements
 from timer_extractor import TimeExtractor
 from tower_tracker import TowerTracker
@@ -10,6 +11,7 @@ from tower_tracker import TowerTracker
 # Everything the decision maker needs, in one place:
 #   - troops on the field (BoardState, updated every frame)
 #   - hand, next card, elixir, time left, tower HP (read from the UI)
+#   - match memory: plays so far, enemy elixir estimate, enemy cards seen (MatchTracker)
 # The UI readers are slower than YOLO, so each one runs on its own interval instead of every frame.
 
 # ================= READ INTERVALS (seconds) =================
@@ -35,6 +37,7 @@ class GameState:
         self.elixir_reader = ElixirExtractor()
         self.timer_reader = TimeExtractor()
         self.tower_tracker = TowerTracker()
+        self.match = MatchTracker()
 
         # Last known values -- kept when a read fails (e.g. greyed-out cards, OCR misses)
         self.hand = [None, None, None, None]   # card names in slots 1-4
@@ -78,6 +81,19 @@ class GameState:
             self.tower_tracker.update(region_name, elements[region_name])
             self._next_tower = (self._next_tower + 1) % len(TOWERS)
 
+        self.match.update(self.board.snapshot(), self.time_left, self.elixir, self.towers(), now)
+
+    def towers(self):
+        """{"enemy_left": {"hp": 1512, "dead": False}, ...} -- hp None = not read yet / not shown."""
+        towers = {}
+        for region_name, name in TOWERS.items():
+            seen = region_name in self.tower_tracker.towers   # TowerTracker creates entries on first update
+            towers[name] = {
+                "hp": self.tower_tracker.get_last_known_hp(region_name) if seen else None,
+                "dead": self.tower_tracker.is_dead(region_name) if seen else False,
+            }
+        return towers
+
     def snapshot(self):
         """The whole game state as one dict.
 
@@ -96,22 +112,17 @@ class GameState:
                 "user_king":   {"hp": None, "dead": False},
             },
             "troops": [ ... ],                                # BoardState.snapshot()
+            "match": { ... },                                 # MatchTracker.snapshot()
         }
         """
-        towers = {}
-        for region_name, name in TOWERS.items():
-            seen = region_name in self.tower_tracker.towers   # TowerTracker creates entries on first update
-            towers[name] = {
-                "hp": self.tower_tracker.get_last_known_hp(region_name) if seen else None,
-                "dead": self.tower_tracker.is_dead(region_name) if seen else False,
-            }
         return {
             "time_left": self.time_left,
             "elixir": self.elixir,
             "hand": list(self.hand),
             "next_card": self.next_card,
-            "towers": towers,
+            "towers": self.towers(),
             "troops": self.board.snapshot(),
+            "match": self.match.snapshot(),
         }
 
     def describe(self):
@@ -124,6 +135,9 @@ class GameState:
             "hand: slot 1 giant, slot 2 arrows, slot 3 mini_pekka, slot 4 musketeer",
             "next card: knight",
             "towers: enemy_left 1512, enemy_right 1206, enemy_king ?, user_left 308, user_right 1512, user_king ?",
+            "phase: single elixir | score: us 0 - 1 them",    # MatchTracker.describe()
+            "enemy elixir (est.): 3.6",
+            ...
             "troops:",
             "enemy knight at (14, 22)",
             "user giant at (4, 22)",
@@ -142,6 +156,7 @@ class GameState:
             f"hand: {hand}",
             f"next card: {state['next_card'] or '?'}",
             f"towers: {towers}",
+            *self.match.describe(),
             "troops:",
             *(self.board.describe() or ["(none)"]),
         ]
